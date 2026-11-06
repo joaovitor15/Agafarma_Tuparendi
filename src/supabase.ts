@@ -104,7 +104,6 @@ class SupabaseMockBuilder {
           pode_acessar_premio: true,
           pode_acessar_orcamentos: true,
           pode_acessar_notas_fiscais: true,
-          pode_acessar_sicredi: true,
           pode_acessar_config: true,
           is_admin: true,
           created_at: new Date().toISOString()

@@ -736,8 +736,22 @@ export const NotasFiscais = ({ session }: { session: any }) => {
       return;
     }
 
+    const totalBruto = itemsSelecionados.reduce((acc, item) => {
+      const qtd = parseFloat(item.quantidade.replace(/\./g, '').replace(',', '.')) || 1;
+      const unit = parseFloat(item.preco_unitario.replace(/\./g, '').replace(',', '.')) || 0;
+      return acc + (qtd * unit);
+    }, 0);
+
     const totalNum = itemsSelecionados.reduce((acc, item) => acc + (parseFloat(item.preco_final.replace(/\./g, '').replace(',', '.')) || 0), 0);
+    const descMedioPercent = totalBruto > 0 && totalBruto > totalNum
+      ? ((totalBruto - totalNum) / totalBruto) * 100
+      : 0;
+
+    const totalBrutoFormatado = totalBruto.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     const totalFormatado = totalNum.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const descontoMedioFormatado = descMedioPercent > 0
+      ? descMedioPercent.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%'
+      : '-';
     const dataFormatada = new Date(comprovanteDate).toLocaleDateString('pt-BR', { timeZone: 'UTC' });
 
     const html = `
@@ -754,14 +768,12 @@ export const NotasFiscais = ({ session }: { session: any }) => {
           .info-table { width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 11px; }
           .info-table td { border: 1px solid #000; padding: 12px; vertical-align: top; }
           
-          .tabela-itens { width: 100%; border-collapse: collapse; margin-bottom: 15px; text-align: center; font-size: 11px; }
+          .tabela-itens { width: 100%; border-collapse: collapse; margin-bottom: 30px; text-align: center; font-size: 11px; }
           .tabela-itens th { border: 1px solid #000; padding: 6px; background: #f2f2f2; font-size: 10px; }
           .tabela-itens td { border: 1px solid #000; padding: 6px; }
           .tabela-itens td.text-left { text-align: left; }
           
-          .total { text-align: right; font-size: 14px; font-weight: bold; margin-bottom: 50px; }
-          
-          .assinatura { margin-top: 50px; text-align: center; width: 45%; margin-left: auto; margin-right: auto; font-size: 12px; padding-bottom: 20px; }
+          .assinatura { margin-top: 40px; text-align: center; width: 45%; margin-left: auto; margin-right: auto; font-size: 12px; padding-bottom: 20px; }
           .linha-assinatura { border-top: 1px solid #000; margin-bottom: 5px; }
           .data-assinatura { margin-top: 8px; font-size: 12px; font-weight: normal; color: #000; }
           
@@ -809,10 +821,14 @@ export const NotasFiscais = ({ session }: { session: any }) => {
                 <td class="nao-quebrar"><b>R$ ${item.preco_final}</b></td>
               </tr>
             `).join('')}
+            <tr style="font-weight: bold;">
+              <td colspan="3" style="text-align: center; font-weight: bold;"><b>Total</b></td>
+              <td class="nao-quebrar" style="font-weight: bold;">R$ ${totalBrutoFormatado}</td>
+              <td style="font-weight: bold;">${descontoMedioFormatado}</td>
+              <td class="nao-quebrar" style="font-weight: bold;"><b>R$ ${totalFormatado}</b></td>
+            </tr>
           </tbody>
         </table>
-
-        <div class="total">TOTAL: R$ ${totalFormatado}</div>
 
         <div class="assinatura">
           <div class="linha-assinatura"></div>
@@ -1145,7 +1161,7 @@ export const NotasFiscais = ({ session }: { session: any }) => {
           <FileCheck className="w-8 h-8 lg:w-10 lg:h-10 text-[#0066b3] shrink-0" />
           <div>
             <h2 className="text-xl lg:text-2xl font-bold text-gray-800 dark:text-gray-100">
-              Espelho de NF
+              Notas Fiscais
             </h2>
             <p className="text-sm lg:text-base text-gray-500 dark:text-gray-400">
               Gere rascunhos rápidos para Notas Fiscais.

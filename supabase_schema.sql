@@ -185,11 +185,22 @@ CREATE POLICY "Apenas admin pode deletar permissões" ON permissoes_usuarios
     )
   );
 
--- Inserir o primeiro admin (você)
-INSERT INTO permissoes_usuarios (email, pode_acessar_premio, pode_acessar_config, pode_acessar_sicredi, is_admin)
-VALUES ('joaovitormachry@gmail.com', true, true, true, true)
+-- Inserir os administradores principais (você e a farmácia)
+INSERT INTO permissoes_usuarios (email, pode_acessar_premio, pode_acessar_config, pode_acessar_orcamentos, pode_acessar_notas_fiscais, is_admin)
+VALUES ('joaovitormachry@gmail.com', true, true, true, true, true)
 ON CONFLICT (email) DO UPDATE SET 
   is_admin = true,
   pode_acessar_premio = true,
   pode_acessar_config = true,
-  pode_acessar_sicredi = true;
+  pode_acessar_orcamentos = true,
+  pode_acessar_notas_fiscais = true;
+
+INSERT INTO permissoes_usuarios (email, pode_acessar_premio, pode_acessar_config, pode_acessar_orcamentos, pode_acessar_notas_fiscais, is_admin)
+VALUES ('agafarmatuparendi438@gmail.com', true, true, true, true, true)
+ON CONFLICT (email) DO UPDATE SET 
+  is_admin = true,
+  pode_acessar_premio = true,
+  pode_acessar_config = true,
+  pode_acessar_orcamentos = true,
+  pode_acessar_notas_fiscais = true;
+

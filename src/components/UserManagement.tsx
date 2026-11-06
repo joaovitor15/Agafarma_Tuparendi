@@ -2,6 +2,12 @@ import { useState, useEffect } from 'react';
 import { supabase } from '../supabase';
 import { Users, ChevronDown, Shield, UserPlus, AlertTriangle, X } from 'lucide-react';
 
+const isFixedAdmin = (email?: string | null): boolean => {
+  if (!email) return false;
+  const lower = email.toLowerCase().trim();
+  return lower === 'agafarmatuparendi438@gmail.com' || lower === 'joaovitormachry@gmail.com';
+};
+
 export function UserManagement() {
   const [users, setUsers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -55,18 +61,15 @@ export function UserManagement() {
     }
   };
 
-  const togglePermission = async (id: string, field: string, currentValue: boolean, user_is_admin: boolean = false) => {
-    if (field !== 'is_admin' && user_is_admin) {
-      setAlertMessage('Atenção: Administradores têm acesso total. Não é possível remover o acesso a módulos específicos enquanto o usuário for administrador.');
+  const togglePermission = async (id: string, field: string, currentValue: boolean, user_is_admin: boolean = false, is_fixed_root_admin: boolean = false) => {
+    if (is_fixed_root_admin && field === 'is_admin') {
+      setAlertMessage('Atenção: Este é o administrador principal do sistema e seu privilégio de administrador não pode ser removido.');
       return;
     }
 
-    if (field === 'is_admin' && currentValue === true) {
-      const adminCount = users.filter(u => u.is_admin).length;
-      if (adminCount <= 1) {
-        setAlertMessage('Atenção: O sistema precisa de pelo menos um administrador. Você não pode remover este privilégio.');
-        return;
-      }
+    if (field !== 'is_admin' && user_is_admin) {
+      setAlertMessage('Atenção: Administradores têm acesso total. Para restringir módulos específicos deste usuário, desmarque primeiro o privilégio de Administrador.');
+      return;
     }
 
     const { data, error } = await supabase
@@ -78,6 +81,9 @@ export function UserManagement() {
       
     if (!error && data) {
       setUsers(users.map(u => u.id === id ? data : u));
+    } else if (error) {
+      console.error('Erro ao atualizar permissão:', error);
+      setAlertMessage('Erro ao atualizar no banco: ' + (error.message || ''));
     }
   };
 
@@ -199,13 +205,16 @@ export function UserManagement() {
                     Nenhum usuário cadastrado.
                   </div>
                 ) : (
-                  users.map(user => (
+                  users.map(user => {
+                    const isUserFixedAdmin = isFixedAdmin(user.email);
+                    const isUserAdmin = Boolean(user.is_admin || isUserFixedAdmin);
+                    return (
                     <div key={user.id} className="bg-[#f8fafc] dark:bg-[#131b2f]/50 border border-gray-200 dark:border-[#1e2b40] rounded-xl overflow-hidden">
                       <div className="p-5 border-b border-gray-100/50">
                         <div className="flex items-center justify-between mb-1">
                            <h4 className="font-semibold text-gray-800 dark:text-gray-200 text-lg flex items-center gap-2">
                              {user.email}
-                             {user.is_admin && (
+                             {isUserAdmin && (
                                <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800">
                                  <Shield className="w-3 h-3 mr-1" /> Admin
                                </span>
@@ -221,8 +230,8 @@ export function UserManagement() {
                                <input 
                                  type="checkbox" 
                                  className="sr-only peer" 
-                                 checked={user.is_admin || user.pode_acessar_premio}
-                                 onChange={() => togglePermission(user.id, 'pode_acessar_premio', user.pode_acessar_premio, user.is_admin)}
+                                 checked={isUserAdmin || user.pode_acessar_premio}
+                                 onChange={() => togglePermission(user.id, 'pode_acessar_premio', user.pode_acessar_premio, isUserAdmin, isUserFixedAdmin)}
                                />
                                <div className="w-11 h-6 bg-gray-200 dark:bg-gray-700 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 dark:after:border-gray-600 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#0066b3] dark:peer-checked:bg-blue-500"></div>
                              </div>
@@ -234,36 +243,21 @@ export function UserManagement() {
                                <input 
                                  type="checkbox" 
                                  className="sr-only peer" 
-                                 checked={user.is_admin || user.pode_acessar_sicredi}
-                                 onChange={() => togglePermission(user.id, 'pode_acessar_sicredi', user.pode_acessar_sicredi, user.is_admin)}
-                               />
-                               <div className="w-11 h-6 bg-gray-200 dark:bg-gray-700 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 dark:after:border-gray-600 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#0066b3] dark:peer-checked:bg-blue-500"></div>
-                             </div>
-                             <span className="text-sm font-medium text-gray-700 dark:text-gray-300 group-hover:text-gray-900 dark:group-hover:text-gray-100 transition-colors">Recibos Sicredi</span>
-                           </label>
-                           
-                           <label className="flex items-center gap-3 cursor-pointer group">
-                             <div className="relative inline-flex items-center">
-                               <input 
-                                 type="checkbox" 
-                                 className="sr-only peer" 
-                                 checked={user.is_admin || user.pode_acessar_config}
-                                 onChange={() => togglePermission(user.id, 'pode_acessar_config', user.pode_acessar_config, user.is_admin)}
+                                 checked={isUserAdmin || user.pode_acessar_config}
+                                 onChange={() => togglePermission(user.id, 'pode_acessar_config', user.pode_acessar_config, isUserAdmin, isUserFixedAdmin)}
                                />
                                <div className="w-11 h-6 bg-gray-200 dark:bg-gray-700 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 dark:after:border-gray-600 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#0066b3] dark:peer-checked:bg-blue-500"></div>
                              </div>
                              <span className="text-sm font-medium text-gray-700 dark:text-gray-300 group-hover:text-gray-900 dark:group-hover:text-gray-100 transition-colors">Configurações</span>
                            </label>
 
-                           
-
                            <label className="flex items-center gap-3 cursor-pointer group">
                              <div className="relative inline-flex items-center">
                                <input 
                                  type="checkbox" 
                                  className="sr-only peer" 
-                                 checked={user.is_admin || user.pode_acessar_orcamentos}
-                                 onChange={() => togglePermission(user.id, 'pode_acessar_orcamentos', user.pode_acessar_orcamentos, user.is_admin)}
+                                 checked={isUserAdmin || user.pode_acessar_orcamentos}
+                                 onChange={() => togglePermission(user.id, 'pode_acessar_orcamentos', user.pode_acessar_orcamentos, isUserAdmin, isUserFixedAdmin)}
                                />
                                <div className="w-11 h-6 bg-gray-200 dark:bg-gray-700 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 dark:after:border-gray-600 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#0066b3] dark:peer-checked:bg-blue-500"></div>
                              </div>
@@ -275,8 +269,8 @@ export function UserManagement() {
                                <input 
                                  type="checkbox" 
                                  className="sr-only peer" 
-                                 checked={user.is_admin || user.pode_acessar_notas_fiscais}
-                                 onChange={() => togglePermission(user.id, 'pode_acessar_notas_fiscais', user.pode_acessar_notas_fiscais, user.is_admin)}
+                                 checked={isUserAdmin || user.pode_acessar_notas_fiscais}
+                                 onChange={() => togglePermission(user.id, 'pode_acessar_notas_fiscais', user.pode_acessar_notas_fiscais, isUserAdmin, isUserFixedAdmin)}
                                />
                                <div className="w-11 h-6 bg-gray-200 dark:bg-gray-700 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 dark:after:border-gray-600 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#0066b3] dark:peer-checked:bg-blue-500"></div>
                              </div>
@@ -288,17 +282,21 @@ export function UserManagement() {
                                <input 
                                  type="checkbox" 
                                  className="sr-only peer" 
-                                 checked={user.is_admin}
-                                 onChange={() => togglePermission(user.id, 'is_admin', user.is_admin)}
+                                 checked={isUserFixedAdmin ? true : Boolean(user.is_admin)}
+                                 disabled={isUserFixedAdmin}
+                                 onChange={() => togglePermission(user.id, 'is_admin', Boolean(user.is_admin), false, isUserFixedAdmin)}
                                />
                                <div className="w-11 h-6 bg-gray-200 dark:bg-gray-700 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-purple-300 dark:peer-focus:ring-purple-800 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 dark:after:border-gray-600 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-purple-600 dark:peer-checked:bg-purple-500"></div>
                              </div>
-                             <span className="text-sm font-medium text-gray-700 dark:text-gray-300 group-hover:text-gray-900 dark:group-hover:text-gray-100 transition-colors">Administrador do Sistema</span>
+                             <span className="text-sm font-medium text-gray-700 dark:text-gray-300 group-hover:text-gray-900 dark:group-hover:text-gray-100 transition-colors">
+                               Administrador {isUserFixedAdmin && <span className="text-xs text-purple-600 dark:text-purple-400 font-normal">(Titular)</span>}
+                             </span>
                            </label>
                         </div>
                       </div>
                     </div>
-                  ))
+                  );
+                })
                 )}
               </div>
             </div>

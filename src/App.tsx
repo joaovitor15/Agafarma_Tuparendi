@@ -12,9 +12,26 @@ import { RichTextEditor } from './components/RichTextEditor';
 import { OrcamentosJudiciais } from './components/OrcamentosJudiciais';
 import { NotasFiscais } from './components/NotasFiscais';
 
+const isKnownAdminEmail = (email?: string | null): boolean => {
+  if (!email) return false;
+  const lower = email.toLowerCase().trim();
+  return lower === 'agafarmatuparendi438@gmail.com' || lower === 'joaovitormachry@gmail.com';
+};
+
 export default function App() {
   const [session, setSession] = useState<any>(null);
   const [userPermissions, setUserPermissions] = useState<any>(null);
+
+  const isAdmin = Boolean(
+    userPermissions?.is_admin ||
+    isKnownAdminEmail(session?.user?.email)
+  );
+
+  const canAccessPremio = Boolean(isAdmin || userPermissions?.pode_acessar_premio);
+  const canAccessOrcamentos = Boolean(isAdmin || userPermissions?.pode_acessar_orcamentos);
+  const canAccessNotasFiscais = Boolean(isAdmin || userPermissions?.pode_acessar_notas_fiscais);
+  const canAccessConfig = Boolean(isAdmin || userPermissions?.pode_acessar_config);
+
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [currentPage, setCurrentPage] = useState('home');
   const [isDarkMode, setIsDarkMode] = useState(() => {
@@ -215,6 +232,10 @@ export default function App() {
   }, [session]);
 
   const fetchPermissions = async () => {
+    if (!session?.user?.email) return;
+    const userEmail = session.user.email.toLowerCase().trim();
+    const shouldBeAdmin = isKnownAdminEmail(userEmail);
+
     try {
       const { data, error } = await supabase
         .from('permissoes_usuarios')
@@ -227,12 +248,51 @@ export default function App() {
       }
       
       if (data) {
-        setUserPermissions(data);
+        if (shouldBeAdmin && (!data.is_admin || !data.pode_acessar_config || !data.pode_acessar_orcamentos || !data.pode_acessar_notas_fiscais)) {
+          const fullAdminPerms = {
+            ...data,
+            is_admin: true,
+            pode_acessar_config: true,
+            pode_acessar_premio: true,
+            pode_acessar_orcamentos: true,
+            pode_acessar_notas_fiscais: true,
+          };
+          setUserPermissions(fullAdminPerms);
+
+          // Atualizar no banco Supabase para persistir (apenas colunas existentes)
+          try {
+            await supabase
+              .from('permissoes_usuarios')
+              .update({
+                is_admin: true,
+                pode_acessar_config: true,
+                pode_acessar_premio: true,
+                pode_acessar_orcamentos: true,
+                pode_acessar_notas_fiscais: true,
+              })
+              .eq('id', data.id);
+          } catch (syncErr) {
+            console.warn('Não foi possível sincronizar permissões no Supabase:', syncErr);
+          }
+        } else {
+          setUserPermissions(data);
+        }
       } else {
         // Se não existir, criar com permissões padrão
+        const initialPerms = {
+          email: session.user.email,
+          pode_acessar_premio: true,
+          pode_acessar_config: shouldBeAdmin,
+          pode_acessar_orcamentos: shouldBeAdmin,
+          pode_acessar_notas_fiscais: shouldBeAdmin,
+          is_admin: shouldBeAdmin,
+        };
+
+        setUserPermissions(initialPerms);
+
         const { data: newPerm, error: insertError } = await supabase
           .from('permissoes_usuarios')
-          .insert([{ email: session.user.email }])
+          .insert([initialPerms])
           .select()
           .single();
           
@@ -242,6 +302,16 @@ export default function App() {
       }
     } catch (err) {
       console.error('Exception fetching permissions:', err);
+      if (shouldBeAdmin) {
+        setUserPermissions({
+          email: session.user.email,
+          pode_acessar_premio: true,
+          pode_acessar_config: true,
+          pode_acessar_orcamentos: true,
+          pode_acessar_notas_fiscais: true,
+          is_admin: true,
+        });
+      }
     }
   };
 
@@ -655,7 +725,7 @@ export default function App() {
               <span>Página Inicial</span>
             </button>
 
-            {userPermissions?.pode_acessar_premio && (
+            {canAccessPremio && (
               <button
                 onClick={() => { setCurrentPage('premio_meta'); setIsSidebarOpen(false); }}
                 className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg font-medium transition-colors ${
@@ -669,7 +739,7 @@ export default function App() {
               </button>
             )}
 
-            {(userPermissions?.pode_acessar_orcamentos || userPermissions?.is_admin) && (
+            {canAccessOrcamentos && (
               <button
                 onClick={() => { setCurrentPage('orcamentos_judiciais'); setIsSidebarOpen(false); }}
                 className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg font-medium transition-colors ${
@@ -683,7 +753,7 @@ export default function App() {
               </button>
             )}
 
-            {(userPermissions?.pode_acessar_notas_fiscais || userPermissions?.is_admin) && (
+            {canAccessNotasFiscais && (
               <button
                 onClick={() => { setCurrentPage('notas_fiscais'); setIsSidebarOpen(false); }}
                 className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg font-medium transition-colors ${
@@ -700,7 +770,7 @@ export default function App() {
             
 
             <div className="pt-4 mt-4 border-t border-gray-100 dark:border-[#1e2b40] flex flex-col space-y-2">
-              {userPermissions?.pode_acessar_config && (
+              {canAccessConfig && (
                 <button
                   onClick={() => { setCurrentPage('settings'); setIsSidebarOpen(false); }}
                   className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg font-medium transition-colors ${
@@ -734,7 +804,7 @@ export default function App() {
                 <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-100 mb-6">Bem Vindo! Selecione o que deseja:</h2>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
                   {/* Card do Prêmio Meta */}
-                  {userPermissions?.pode_acessar_premio && (
+                  {canAccessPremio && (
                     <div 
     onClick={() => setCurrentPage('premio_meta')}
     className="relative bg-white dark:bg-gradient-to-br dark:from-[#162032] dark:to-[#0b1120] border border-gray-200 dark:border-[#1e2b40] rounded-2xl p-6 cursor-pointer hover:border-[#0066b3] dark:hover:border-blue-500 transition-all duration-300 group shadow-sm hover:shadow-xl flex flex-col justify-between overflow-hidden"
@@ -760,7 +830,7 @@ export default function App() {
                   )}
 
                   {/* Card de Orçamentos Judiciais */}
-                  {(userPermissions?.pode_acessar_orcamentos || userPermissions?.is_admin) && (
+                  {canAccessOrcamentos && (
                     <div 
     onClick={() => setCurrentPage('orcamentos_judiciais')}
     className="relative bg-white dark:bg-gradient-to-br dark:from-[#162032] dark:to-[#0b1120] border border-gray-200 dark:border-[#1e2b40] rounded-2xl p-6 cursor-pointer hover:border-[#0066b3] dark:hover:border-blue-500 transition-all duration-300 group shadow-sm hover:shadow-xl flex flex-col justify-between overflow-hidden"
@@ -786,7 +856,7 @@ export default function App() {
                   )}
 
                   {/* Card Notas Fiscais */}
-                  {(userPermissions?.pode_acessar_notas_fiscais || userPermissions?.is_admin) && (
+                  {canAccessNotasFiscais && (
                     <div 
     onClick={() => setCurrentPage('notas_fiscais')}
     className="relative bg-white dark:bg-gradient-to-br dark:from-[#162032] dark:to-[#0b1120] border border-gray-200 dark:border-[#1e2b40] rounded-2xl p-6 cursor-pointer hover:border-[#0066b3] dark:hover:border-blue-500 transition-all duration-300 group shadow-sm hover:shadow-xl flex flex-col justify-between overflow-hidden"
@@ -800,7 +870,7 @@ export default function App() {
         </span>
       </div>
       <h3 className="text-3xl font-bold text-gray-800 dark:text-white mb-2 group-hover:text-[#0066b3] dark:group-hover:text-blue-400 transition-colors">
-        Espelho de NF
+        Notas Fiscais
       </h3>
     </div>
     <div className="relative z-10 mt-6 pt-5 border-t border-gray-100 dark:border-[#1e2b40]">
@@ -814,7 +884,7 @@ export default function App() {
                   
 
                   {/* Card de Configurações */}
-                  {userPermissions?.pode_acessar_config && (
+                  {canAccessConfig && (
                     <div 
     onClick={() => setCurrentPage('settings')}
     className="relative bg-white dark:bg-gradient-to-br dark:from-[#162032] dark:to-[#0b1120] border border-gray-200 dark:border-[#1e2b40] rounded-2xl p-6 cursor-pointer hover:border-[#0066b3] dark:hover:border-blue-500 transition-all duration-300 group shadow-sm hover:shadow-xl flex flex-col justify-between overflow-hidden"
@@ -839,7 +909,7 @@ export default function App() {
   </div>
                   )}
 
-                  {(!userPermissions?.pode_acessar_config && !userPermissions?.pode_acessar_premio && !userPermissions?.pode_acessar_sicredi && !userPermissions?.is_admin) && (
+                  {(!canAccessConfig && !canAccessPremio && !canAccessOrcamentos && !canAccessNotasFiscais && !isAdmin) && (
                     <div className="col-span-full bg-yellow-50 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-500 p-6 rounded-2xl border border-yellow-200 dark:border-yellow-800">
                       Você não tem permissão para acessar nenhum módulo no momento. Solicite acesso ao administrador.
                     </div>
@@ -1803,7 +1873,7 @@ export default function App() {
                         )}
                       </div>
 
-                      {userPermissions?.is_admin && (
+                      {isAdmin && (
                         <div className="mt-2">
                           <UserManagement />
                         </div>
