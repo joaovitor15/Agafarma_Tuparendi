@@ -29,6 +29,31 @@ interface ItemNF {
   preco_final: string;
 }
 
+// Retorna a data local atual no formato YYYY-MM-DD
+const getTodayLocalDate = (): string => {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+// Formata data ISO (YYYY-MM-DD) para pt-BR (DD/MM/YYYY) sem distorção de fuso horário
+const formatDateBR = (dateStr?: string | null): string => {
+  if (!dateStr) return '';
+  const match = String(dateStr).match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (match) {
+    const [, ano, mes, dia] = match;
+    return `${dia}/${mes}/${ano}`;
+  }
+  if (/^\d{2}\/\d{2}\/\d{4}$/.test(String(dateStr))) return String(dateStr);
+  try {
+    return new Date(dateStr).toLocaleDateString('pt-BR', { timeZone: 'UTC' });
+  } catch {
+    return String(dateStr);
+  }
+};
+
 export const NotasFiscais = ({ session }: { session: any }) => {
   const [activeTab, setActiveTab] = useState<'empresa' | 'vencidos' | 'sicredi'>('empresa');
   const [clientes, setClientes] = useState<Cliente[]>([]);
@@ -57,7 +82,7 @@ export const NotasFiscais = ({ session }: { session: any }) => {
 
   const [currentItemNF, setCurrentItemNF] = useState<ItemNF>({
     id: crypto.randomUUID(),
-    data: new Date().toISOString().split('T')[0],
+    data: getTodayLocalDate(),
     codigo: '',
     medicamento: '',
     lote: '',
@@ -125,7 +150,7 @@ export const NotasFiscais = ({ session }: { session: any }) => {
     
     setCurrentItemNF({
       id: crypto.randomUUID(),
-      data: new Date().toISOString().split('T')[0],
+      data: getTodayLocalDate(),
       codigo: '',
       medicamento: '',
       lote: '',
@@ -156,7 +181,7 @@ export const NotasFiscais = ({ session }: { session: any }) => {
 
   const [currentItemVencidos, setCurrentItemVencidos] = useState<ItemNF>({
     id: crypto.randomUUID(),
-    data: new Date().toISOString().split('T')[0],
+    data: getTodayLocalDate(),
     codigo: '',
     medicamento: '',
     lote: '',
@@ -202,7 +227,7 @@ export const NotasFiscais = ({ session }: { session: any }) => {
     
     setCurrentItemVencidos({
       id: crypto.randomUUID(),
-      data: new Date().toISOString().split('T')[0],
+      data: getTodayLocalDate(),
       codigo: '',
       medicamento: '',
       lote: '',
@@ -349,7 +374,7 @@ export const NotasFiscais = ({ session }: { session: any }) => {
       localStorage.removeItem('itens_vencidos_local');
       setCurrentItemVencidos({
         id: crypto.randomUUID(),
-        data: new Date().toISOString().split('T')[0],
+        data: getTodayLocalDate(),
         codigo: '',
         medicamento: '',
         lote: '',
@@ -373,7 +398,7 @@ export const NotasFiscais = ({ session }: { session: any }) => {
       return acc + (parseFloat(item.preco_final.replace(',', '.')) || 0);
     }, 0);
     const totalFormatado = totalNum.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    const dataFormatada = new Date().toLocaleDateString('pt-BR', { timeZone: 'UTC' });
+    const dataFormatada = new Date().toLocaleDateString('pt-BR');
 
     const html = `
       <!DOCTYPE html>
@@ -499,7 +524,7 @@ export const NotasFiscais = ({ session }: { session: any }) => {
   const [isDeleting, setIsDeleting] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [showComprovanteModal, setShowComprovanteModal] = useState(false);
-  const [comprovanteDate, setComprovanteDate] = useState(new Date().toISOString().split('T')[0]);
+  const [comprovanteDate, setComprovanteDate] = useState(getTodayLocalDate());
   const [showLimparConfirmNF, setShowLimparConfirmNF] = useState(false);
   const [showLimparConfirmVencidos, setShowLimparConfirmVencidos] = useState(false);
 
@@ -583,7 +608,7 @@ export const NotasFiscais = ({ session }: { session: any }) => {
       setCurrentNFId(null);
       setCurrentItemNF({
         id: crypto.randomUUID(),
-        data: new Date().toISOString().split('T')[0],
+        data: getTodayLocalDate(),
         codigo: '',
         medicamento: '',
         lote: '',
@@ -610,7 +635,7 @@ export const NotasFiscais = ({ session }: { session: any }) => {
 
     const totalNum = calcularTotalNota();
     const totalFormatado = totalNum.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    const dataFormatada = new Date().toLocaleDateString('pt-BR', { timeZone: 'UTC' });
+    const dataFormatada = new Date().toLocaleDateString('pt-BR');
 
     const html = `
       <!DOCTYPE html>
@@ -720,7 +745,7 @@ export const NotasFiscais = ({ session }: { session: any }) => {
 
   const handlePrintComprovante = () => {
     if (!selectedClienteId || itensNF.length === 0) return;
-    const uniqueDates = Array.from(new Set(itensNF.map(item => item.data))).sort((a, b) => new Date(b).getTime() - new Date(a).getTime());
+    const uniqueDates = Array.from(new Set(itensNF.map(item => item.data))).sort((a, b) => b.localeCompare(a));
     setComprovanteDate(uniqueDates[0]);
     setShowComprovanteModal(true);
   };
@@ -752,7 +777,7 @@ export const NotasFiscais = ({ session }: { session: any }) => {
     const descontoMedioFormatado = descMedioPercent > 0
       ? descMedioPercent.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%'
       : '-';
-    const dataFormatada = new Date(comprovanteDate).toLocaleDateString('pt-BR', { timeZone: 'UTC' });
+    const dataFormatada = formatDateBR(comprovanteDate);
 
     const html = `
       <!DOCTYPE html>
@@ -1823,7 +1848,7 @@ export const NotasFiscais = ({ session }: { session: any }) => {
                           <div className="flex justify-between items-start mb-3">
                             <div className="pr-12">
                                <span className="font-bold text-gray-800 dark:text-gray-100 block text-base">{item.codigo ? `${item.codigo} - ` : ''}{item.medicamento}</span>
-                               <span className="block text-sm text-gray-500 dark:text-gray-400 mt-0.5">{new Date(item.data).toLocaleDateString('pt-BR')}</span>
+                               <span className="block text-sm text-gray-500 dark:text-gray-400 mt-0.5">{formatDateBR(item.data)}</span>
                             </div>
                             <div className="flex gap-1 absolute top-3 right-3">
                                <button onClick={() => handleEditItemNF(item)} className="p-2 text-blue-500 bg-gray-50 dark:bg-white/5 hover:bg-blue-50 dark:bg-blue-900/20 rounded-lg transition-colors"><Edit2 className="w-4 h-4" /></button>
@@ -1862,7 +1887,7 @@ export const NotasFiscais = ({ session }: { session: any }) => {
                           {itensNF.map((item) => (
                             <tr key={item.id} className="hover:bg-gray-50 dark:bg-white/5 dark:hover:bg-white/10">
                               <td className="py-3 px-4 text-gray-600 dark:text-gray-400 whitespace-nowrap">
-                                {new Date(item.data).toLocaleDateString('pt-BR')}
+                                {formatDateBR(item.data)}
                               </td>
                               <td className="py-3 px-4 text-gray-600 dark:text-gray-400">{item.codigo || '-'}</td>
                               <td className="py-3 px-4 font-medium text-gray-800 dark:text-gray-100">{item.medicamento}</td>
@@ -2139,7 +2164,7 @@ export const NotasFiscais = ({ session }: { session: any }) => {
                           <div className="flex justify-between items-start mb-3">
                             <div className="pr-12">
                                <span className="font-bold text-gray-800 dark:text-gray-100 block text-base">{item.codigo ? `${item.codigo} - ` : ''}{item.medicamento}</span>
-                               <span className="block text-sm text-gray-500 dark:text-gray-400 mt-0.5">{new Date(item.data).toLocaleDateString('pt-BR')}</span>
+                               <span className="block text-sm text-gray-500 dark:text-gray-400 mt-0.5">{formatDateBR(item.data)}</span>
                             </div>
                             <div className="flex gap-1 absolute top-3 right-3">
                                <button onClick={() => handleEditItemVencidos(item)} className="p-2 text-blue-500 bg-gray-50 dark:bg-white/5 hover:bg-blue-50 dark:bg-blue-900/20 rounded-lg transition-colors"><Edit2 className="w-4 h-4" /></button>
@@ -2173,7 +2198,7 @@ export const NotasFiscais = ({ session }: { session: any }) => {
                           {itensVencidos.map((item) => (
                             <tr key={item.id} className="hover:bg-gray-50 dark:bg-white/5 dark:hover:bg-white/10">
                               <td className="py-3 px-4 text-gray-600 dark:text-gray-400 whitespace-nowrap">
-                                {new Date(item.data).toLocaleDateString('pt-BR')}
+                                {formatDateBR(item.data)}
                               </td>
                               <td className="py-3 px-4 text-gray-600 dark:text-gray-400">{item.codigo || '-'}</td>
                               <td className="py-3 px-4 font-medium text-gray-800 dark:text-gray-100">{item.medicamento}</td>
@@ -2344,10 +2369,10 @@ export const NotasFiscais = ({ session }: { session: any }) => {
                 className="w-full px-4 py-2 border border-gray-300 dark:border-[#1e2b40] rounded-lg focus:ring-2 focus:ring-[#0066b3] focus:border-transparent transition-colors outline-none bg-white dark:bg-[#1e2b40] dark:text-gray-200 appearance-none cursor-pointer shadow-sm"
               >
                 {Array.from(new Set(itensNF.map(item => item.data)))
-                  .sort((a, b) => new Date(b).getTime() - new Date(a).getTime())
+                  .sort((a, b) => b.localeCompare(a))
                   .map(date => (
                     <option key={date} value={date}>
-                      {new Date(date).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}
+                      {formatDateBR(date)}
                     </option>
                 ))}
               </select>
