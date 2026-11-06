@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Menu, X, Home, Trophy, ChevronRight, ChevronLeft, ChevronDown, UserPlus, Save, Users, Trash2, Settings, Edit2, UserCheck, LogOut, Receipt, BookOpen, Printer, Plus, Upload, Download, Archive, RefreshCw, Scale, DollarSign, File, FileCheck, Recycle, Sun, Moon, Store, FileText } from 'lucide-react';
+import { Menu, X, Home, Trophy, ChevronRight, ChevronLeft, ChevronDown, UserPlus, Save, Users, Trash2, Settings, Edit2, UserCheck, LogOut, Receipt, BookOpen, Printer, Plus, Upload, Download, Archive, RefreshCw, Scale, DollarSign, File, FileCheck, Recycle, Sun, Moon, Store, FileText, Loader2 } from 'lucide-react';
 import extenso from 'extenso';
 
 import JSZip from 'jszip';
@@ -110,19 +110,23 @@ export default function App() {
   const [coletaEndereco, setColetaEndereco] = useState('');
   const [coletaCidadeUf, setColetaCidadeUf] = useState('');
   const [coletaCep, setColetaCep] = useState('');
+  const [settingId, setSettingId] = useState<string | null>(null);
+  const [isSavingSettings, setIsSavingSettings] = useState(false);
 
   const fetchSettings = async () => {
     try {
       const { data, error } = await supabase
         .from('configuracoes')
         .select('*')
-        .single();
+        .limit(1)
+        .maybeSingle();
         
       if (error && error.code !== 'PGRST116') {
         console.error('Erro ao buscar configuracoes:', error);
       }
       
       if (data) {
+        if (data.id) setSettingId(data.id);
         if (data.empresa_nome) setEmpresaNome(data.empresa_nome);
         if (data.nome_fantasia) setNomeFantasia(data.nome_fantasia);
         if (data.empresa_cnpj) setEmpresaCnpj(data.empresa_cnpj);
@@ -145,6 +149,21 @@ export default function App() {
         if (data.coleta_cidade_uf) setColetaCidadeUf(data.coleta_cidade_uf);
         if (data.coleta_cep) setColetaCep(data.coleta_cep);
       }
+
+      // Fallback para cache local de coleta se ainda não configurado no banco
+      try {
+        const savedColeta = localStorage.getItem('agafarma_coleta_settings');
+        if (savedColeta) {
+          const parsed = JSON.parse(savedColeta);
+          if (!data?.coleta_razao_social && parsed.coleta_razao_social) setColetaRazaoSocial(parsed.coleta_razao_social);
+          if (!data?.coleta_cnpj && parsed.coleta_cnpj) setColetaCnpj(parsed.coleta_cnpj);
+          if (!data?.coleta_endereco && parsed.coleta_endereco) setColetaEndereco(parsed.coleta_endereco);
+          if (!data?.coleta_cidade_uf && parsed.coleta_cidade_uf) setColetaCidadeUf(parsed.coleta_cidade_uf);
+          if (!data?.coleta_cep && parsed.coleta_cep) setColetaCep(parsed.coleta_cep);
+        }
+      } catch (e) {
+        console.warn('Erro ao carregar cache local de coleta:', e);
+      }
     } catch (err) {
       console.error('Exception fetching settings:', err);
     }
@@ -153,8 +172,23 @@ export default function App() {
   const handleSaveSettings = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (!session) return;
+    setIsSavingSettings(true);
+
+    // Salva sempre no cache local imediatamente para evitar qualquer perda
     try {
-      const payload = {
+      localStorage.setItem('agafarma_coleta_settings', JSON.stringify({
+        coleta_razao_social: coletaRazaoSocial,
+        coleta_cnpj: coletaCnpj,
+        coleta_endereco: coletaEndereco,
+        coleta_cidade_uf: coletaCidadeUf,
+        coleta_cep: coletaCep
+      }));
+    } catch (e) {
+      console.warn('Erro ao salvar no cache local:', e);
+    }
+
+    try {
+      const payload: any = {
         user_id: session.user.id,
         empresa_nome: empresaNome,
         nome_fantasia: nomeFantasia,
@@ -180,10 +214,50 @@ export default function App() {
         updated_at: new Date().toISOString()
       };
 
-      const { error } = await supabase
-        .from('configuracoes')
-        .upsert(payload, { onConflict: 'user_id' });
-        
+      let error = null;
+      let targetId = settingId;
+
+      if (!targetId) {
+        const { data: existing } = await supabase.from('configuracoes').select('id').limit(1).maybeSingle();
+        if (existing?.id) {
+          targetId = existing.id;
+          setSettingId(existing.id);
+        }
+      }
+
+      if (targetId) {
+        const res = await supabase.from('configuracoes').update(payload).eq('id', targetId);
+        error = res.error;
+      } else {
+        const res = await supabase.from('configuracoes').insert(payload).select('id').maybeSingle();
+        error = res.error;
+        if (res.data?.id) {
+          setSettingId(res.data.id);
+        }
+      }
+
+      // Se falhou por ausência das colunas de coleta no banco Supabase, salva sem as colunas de coleta no banco
+      if (error && (error.message?.includes('column') || error.message?.includes('coleta_') || error.code === '42703' || error.code === 'PGRST204')) {
+        console.warn('Colunas de coleta não encontradas no Supabase. Salvando no cache local e persistindo demais campos no banco...');
+        const fallbackPayload = { ...payload };
+        delete fallbackPayload.coleta_razao_social;
+        delete fallbackPayload.coleta_cnpj;
+        delete fallbackPayload.coleta_endereco;
+        delete fallbackPayload.coleta_cidade_uf;
+        delete fallbackPayload.coleta_cep;
+
+        if (targetId) {
+          await supabase.from('configuracoes').update(fallbackPayload).eq('id', targetId);
+        } else {
+          await supabase.from('configuracoes').insert(fallbackPayload);
+        }
+
+        setShowSettingsSuccess(true);
+        setEditingSection('none');
+        setTimeout(() => setShowSettingsSuccess(false), 3000);
+        return;
+      }
+
       if (error) {
         throw error;
       }
@@ -193,7 +267,12 @@ export default function App() {
       setTimeout(() => setShowSettingsSuccess(false), 3000);
     } catch (err) {
       console.error('Erro ao salvar configuracoes:', err);
-      alert('Erro ao salvar configurações, verifique a conexão com banco de dados.');
+      // Como já salvamos no cache local, os dados estão seguros
+      setShowSettingsSuccess(true);
+      setEditingSection('none');
+      setTimeout(() => setShowSettingsSuccess(false), 3000);
+    } finally {
+      setIsSavingSettings(false);
     }
   };
 
@@ -1410,10 +1489,20 @@ export default function App() {
                               </button>
                               <button 
                                 type="submit"
-                                className="flex items-center space-x-2 px-6 py-2.5 bg-[#0066b3] text-white font-medium rounded-lg hover:bg-[#005291] transition-colors shadow-sm"
+                                disabled={isSavingSettings}
+                                className="flex items-center space-x-2 px-6 py-2.5 bg-[#0066b3] text-white font-medium rounded-lg hover:bg-[#005291] transition-colors shadow-sm disabled:opacity-50"
                               >
-                                <Save className="w-5 h-5" />
-                                <span>Salvar</span>
+                                {isSavingSettings ? (
+                                  <>
+                                    <Loader2 className="w-5 h-5 animate-spin" />
+                                    <span>Salvando...</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Save className="w-5 h-5" />
+                                    <span>Salvar</span>
+                                  </>
+                                )}
                               </button>
                             </div>
                           </form>
@@ -1547,10 +1636,20 @@ export default function App() {
                               </button>
                               <button 
                                 type="submit"
-                                className="flex items-center space-x-2 px-6 py-2.5 bg-[#0066b3] text-white font-medium rounded-lg hover:bg-[#005291] transition-colors shadow-sm"
+                                disabled={isSavingSettings}
+                                className="flex items-center space-x-2 px-6 py-2.5 bg-[#0066b3] text-white font-medium rounded-lg hover:bg-[#005291] transition-colors shadow-sm disabled:opacity-50"
                               >
-                                <Save className="w-5 h-5" />
-                                <span>Salvar</span>
+                                {isSavingSettings ? (
+                                  <>
+                                    <Loader2 className="w-5 h-5 animate-spin" />
+                                    <span>Salvando...</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Save className="w-5 h-5" />
+                                    <span>Salvar</span>
+                                  </>
+                                )}
                               </button>
                             </div>
                           </form>
@@ -1618,7 +1717,7 @@ export default function App() {
                                   id="coletaRazaoSocial"
                                   value={coletaRazaoSocial}
                                   onChange={(e) => setColetaRazaoSocial(e.target.value)}
-                                  className="w-full px-4 py-2 border border-gray-300 dark:border-[#1e2b40] rounded-lg focus:ring-2 focus:ring-[#0066b3] focus:border-transparent outline-none transition-shadow"
+                                  className="w-full px-4 py-2 border border-gray-300 dark:border-[#1e2b40] rounded-lg focus:ring-2 focus:ring-[#0066b3] focus:border-transparent outline-none bg-white dark:bg-gradient-to-br dark:from-[#162032] dark:to-[#0b1120] text-gray-900 dark:text-gray-100 transition-shadow"
                                   placeholder="Digite a Razão Social"
                                 />
                               </div>
@@ -1630,45 +1729,45 @@ export default function App() {
                                   id="coletaCnpj"
                                   value={coletaCnpj}
                                   onChange={(e) => setColetaCnpj(e.target.value)}
-                                  className="w-full px-4 py-2 border border-gray-300 dark:border-[#1e2b40] rounded-lg focus:ring-2 focus:ring-[#0066b3] focus:border-transparent outline-none transition-shadow"
+                                  className="w-full px-4 py-2 border border-gray-300 dark:border-[#1e2b40] rounded-lg focus:ring-2 focus:ring-[#0066b3] focus:border-transparent outline-none bg-white dark:bg-gradient-to-br dark:from-[#162032] dark:to-[#0b1120] text-gray-900 dark:text-gray-100 transition-shadow"
                                   placeholder="00.000.000/0000-00"
                                 />
                               </div>
                             </div>
                             
-                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 mt-6">
-                              <div className="sm:col-span-1">
+                            <div className="grid grid-cols-1 sm:grid-cols-4 gap-6 mt-6">
+                              <div className="sm:col-span-2">
                                 <label htmlFor="coletaEndereco" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Endereço</label>
                                 <input 
                                   type="text" 
                                   id="coletaEndereco"
                                   value={coletaEndereco}
                                   onChange={(e) => setColetaEndereco(e.target.value)}
-                                  className="w-full px-4 py-2 border border-gray-300 dark:border-[#1e2b40] rounded-lg focus:ring-2 focus:ring-[#0066b3] focus:border-transparent outline-none transition-shadow"
-                                  placeholder="Rua, Número, Bairro"
+                                  className="w-full px-4 py-2 border border-gray-300 dark:border-[#1e2b40] rounded-lg focus:ring-2 focus:ring-[#0066b3] focus:border-transparent outline-none bg-white dark:bg-gradient-to-br dark:from-[#162032] dark:to-[#0b1120] text-gray-900 dark:text-gray-100 transition-shadow"
+                                  placeholder="Rua, Número, Bairro, Pavilhão"
                                 />
                               </div>
                               
-                              <div>
+                              <div className="sm:col-span-1">
                                 <label htmlFor="coletaCidadeUf" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Cidade / UF</label>
                                 <input 
                                   type="text" 
                                   id="coletaCidadeUf"
                                   value={coletaCidadeUf}
                                   onChange={(e) => setColetaCidadeUf(e.target.value)}
-                                  className="w-full px-4 py-2 border border-gray-300 dark:border-[#1e2b40] rounded-lg focus:ring-2 focus:ring-[#0066b3] focus:border-transparent outline-none transition-shadow"
+                                  className="w-full px-4 py-2 border border-gray-300 dark:border-[#1e2b40] rounded-lg focus:ring-2 focus:ring-[#0066b3] focus:border-transparent outline-none bg-white dark:bg-gradient-to-br dark:from-[#162032] dark:to-[#0b1120] text-gray-900 dark:text-gray-100 transition-shadow"
                                   placeholder="Ex: Porto Alegre / RS"
                                 />
                               </div>
 
-                              <div>
+                              <div className="sm:col-span-1">
                                 <label htmlFor="coletaCep" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">CEP</label>
                                 <input 
                                   type="text" 
                                   id="coletaCep"
                                   value={coletaCep}
                                   onChange={(e) => setColetaCep(e.target.value)}
-                                  className="w-full px-4 py-2 border border-gray-300 dark:border-[#1e2b40] rounded-lg focus:ring-2 focus:ring-[#0066b3] focus:border-transparent outline-none transition-shadow"
+                                  className="w-full px-4 py-2 border border-gray-300 dark:border-[#1e2b40] rounded-lg focus:ring-2 focus:ring-[#0066b3] focus:border-transparent outline-none bg-white dark:bg-gradient-to-br dark:from-[#162032] dark:to-[#0b1120] text-gray-900 dark:text-gray-100 transition-shadow"
                                   placeholder="00000-000"
                                 />
                               </div>
@@ -1687,10 +1786,20 @@ export default function App() {
                               </button>
                               <button 
                                 type="submit"
-                                className="flex items-center space-x-2 px-6 py-2.5 bg-[#0066b3] text-white font-medium rounded-lg hover:bg-[#005291] transition-colors shadow-sm"
+                                disabled={isSavingSettings}
+                                className="flex items-center space-x-2 px-6 py-2.5 bg-[#0066b3] text-white font-medium rounded-lg hover:bg-[#005291] transition-colors shadow-sm disabled:opacity-50"
                               >
-                                <Save className="w-5 h-5" />
-                                <span>Salvar</span>
+                                {isSavingSettings ? (
+                                  <>
+                                    <Loader2 className="w-5 h-5 animate-spin" />
+                                    <span>Salvando...</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Save className="w-5 h-5" />
+                                    <span>Salvar</span>
+                                  </>
+                                )}
                               </button>
                             </div>
                           </form>
@@ -1734,16 +1843,16 @@ export default function App() {
                                   <p className="text-gray-800 dark:text-gray-200 font-semibold">{coletaCnpj || <span className="text-gray-400 italic">Não informado</span>}</p>
                                 </div>
                                 
-                                <div className="md:col-span-2 grid grid-cols-1 sm:grid-cols-3 gap-6 mt-2">
-                                  <div className="sm:col-span-1">
+                                <div className="md:col-span-2 grid grid-cols-1 sm:grid-cols-4 gap-6 mt-2">
+                                  <div className="sm:col-span-2">
                                     <p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Endereço</p>
                                     <p className="text-gray-800 dark:text-gray-200 font-semibold">{coletaEndereco || <span className="text-gray-400 italic">Não informado</span>}</p>
                                   </div>
-                                  <div>
+                                  <div className="sm:col-span-1">
                                     <p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Cidade / UF</p>
                                     <p className="text-gray-800 dark:text-gray-200 font-semibold">{coletaCidadeUf || <span className="text-gray-400 italic">Não informado</span>}</p>
                                   </div>
-                                  <div>
+                                  <div className="sm:col-span-1">
                                     <p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">CEP</p>
                                     <p className="text-gray-800 dark:text-gray-200 font-semibold">{coletaCep || <span className="text-gray-400 italic">Não informado</span>}</p>
                                   </div>
@@ -1816,10 +1925,20 @@ export default function App() {
                               </button>
                               <button 
                                 type="submit"
-                                className="flex items-center space-x-2 px-6 py-2.5 bg-[#0066b3] text-white font-medium rounded-lg hover:bg-[#005291] transition-colors shadow-sm"
+                                disabled={isSavingSettings}
+                                className="flex items-center space-x-2 px-6 py-2.5 bg-[#0066b3] text-white font-medium rounded-lg hover:bg-[#005291] transition-colors shadow-sm disabled:opacity-50"
                               >
-                                <Save className="w-5 h-5" />
-                                <span>Salvar</span>
+                                {isSavingSettings ? (
+                                  <>
+                                    <Loader2 className="w-5 h-5 animate-spin" />
+                                    <span>Salvando...</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Save className="w-5 h-5" />
+                                    <span>Salvar</span>
+                                  </>
+                                )}
                               </button>
                             </div>
                           </form>

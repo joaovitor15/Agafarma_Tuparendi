@@ -974,7 +974,8 @@ export const NotasFiscais = ({ session }: { session: any }) => {
       const { data, error } = await supabase
         .from('configuracoes')
         .select('coleta_razao_social, coleta_cnpj, coleta_endereco, coleta_cidade_uf, coleta_cep')
-        .single();
+        .limit(1)
+        .maybeSingle();
         
       if (data) {
         if (data.coleta_razao_social) setColetaRazaoSocial(data.coleta_razao_social);
@@ -983,8 +984,34 @@ export const NotasFiscais = ({ session }: { session: any }) => {
         if (data.coleta_cidade_uf) setColetaCidadeUf(data.coleta_cidade_uf);
         if (data.coleta_cep) setColetaCep(data.coleta_cep);
       }
+
+      // Fallback para cache local caso o banco não tenha colunas ou dados ainda
+      try {
+        const savedColeta = localStorage.getItem('agafarma_coleta_settings');
+        if (savedColeta) {
+          const parsed = JSON.parse(savedColeta);
+          if (!data?.coleta_razao_social && parsed.coleta_razao_social) setColetaRazaoSocial(parsed.coleta_razao_social);
+          if (!data?.coleta_cnpj && parsed.coleta_cnpj) setColetaCnpj(parsed.coleta_cnpj);
+          if (!data?.coleta_endereco && parsed.coleta_endereco) setColetaEndereco(parsed.coleta_endereco);
+          if (!data?.coleta_cidade_uf && parsed.coleta_cidade_uf) setColetaCidadeUf(parsed.coleta_cidade_uf);
+          if (!data?.coleta_cep && parsed.coleta_cep) setColetaCep(parsed.coleta_cep);
+        }
+      } catch (e) {
+        console.warn('Erro ao carregar cache local de coleta:', e);
+      }
     } catch (err) {
       console.error('Exception fetching coleta settings:', err);
+      try {
+        const savedColeta = localStorage.getItem('agafarma_coleta_settings');
+        if (savedColeta) {
+          const parsed = JSON.parse(savedColeta);
+          if (parsed.coleta_razao_social) setColetaRazaoSocial(parsed.coleta_razao_social);
+          if (parsed.coleta_cnpj) setColetaCnpj(parsed.coleta_cnpj);
+          if (parsed.coleta_endereco) setColetaEndereco(parsed.coleta_endereco);
+          if (parsed.coleta_cidade_uf) setColetaCidadeUf(parsed.coleta_cidade_uf);
+          if (parsed.coleta_cep) setColetaCep(parsed.coleta_cep);
+        }
+      } catch (e) {}
     }
   };
 

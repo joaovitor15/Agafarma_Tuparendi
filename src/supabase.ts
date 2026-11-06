@@ -201,6 +201,8 @@ class SupabaseMockBuilder {
       const index = nextItems.findIndex((i: any) => {
         if (item.id && i.id === item.id) return true;
         if (this.tableName === 'permissoes_usuarios' && item.email && i.email === item.email) return true;
+        if (this.tableName === 'configuracoes') return true;
+        if (item.user_id && i.user_id === item.user_id) return true;
         return false;
       });
 
